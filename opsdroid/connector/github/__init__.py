@@ -1,4 +1,5 @@
 """A connector for GitHub."""
+import copy
 import hashlib
 import hmac
 import json
@@ -24,6 +25,8 @@ class ConnectorGitHub(Connector):
         super().__init__(config, opsdroid=opsdroid)
         logging.debug("Loaded GitHub connector.")
         self.name = self.config.get("name", "github")
+        self.multitenant = self.config.get("multitenant", False)
+        self.collection = self.config.get("collection", "github")
         self.opsdroid = opsdroid
         self.github_username = None
         self.github_api_url = self.config.get("api_base_url", GITHUB_API_URL)
@@ -40,8 +43,7 @@ class ConnectorGitHub(Connector):
                 )
             )
 
-    async def connect(self):
-        """Connect to GitHub."""
+    async def login_and_set_username(self):
         headers = {"Authorization": f"token {self.github_token}"}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             url = f"{self.github_api_url}/user"
@@ -55,9 +57,17 @@ class ConnectorGitHub(Connector):
         _LOGGER.debug(_("Done."))
         self.github_username = bot_data["login"]
 
-        self.opsdroid.web_server.web_app.router.add_post(
-            "/connector/{}".format(self.name), self.github_message_handler
-        )
+    async def connect(self):
+        """Connect to GitHub."""
+        if self.multitenant:
+            self.opsdroid.web_server.web_app.router.add_post(
+                "/connector/{}/{{_id}}".format(self.name), self.github_message_handler
+            )
+        else:
+            await self.login_and_set_username()
+            self.opsdroid.web_server.web_app.router.add_post(
+                "/connector/{}".format(self.name), self.github_message_handler
+            )
 
     async def disconnect(self):
         """Disconnect from GitHub."""
@@ -96,6 +106,15 @@ class ConnectorGitHub(Connector):
 
             return signature == computed_hash
         return True
+
+    async def handle_request_multitenancy(self, tenant_id):
+        db = next(db for db in self.opsdroid.memory.databases if db.name == "mongo")
+        github_db = copy.copy(db)
+        github_db.collection = self.collection
+        tenant = await github_db.get(tenant_id)
+        self.secret = tenant["secret"]
+        self.github_token = tenant["token"]
+        await self.login_and_set_username()
 
     async def handle_check_event(self, payload: dict, user: str) -> github_events:
         """Handle check events.
@@ -210,6 +229,9 @@ class ConnectorGitHub(Connector):
 
     async def github_message_handler(self, request):
         """Handle event from GitHub."""
+        if self.multitenant:
+            tenant_id = request.match_info["_id"]
+            await self.handle_request_multitenancy(tenant_id)
         req = await request.post()
         payload = json.loads(req["payload"])
         is_valid_request = await self.validate_request(request, self.secret)
