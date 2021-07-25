@@ -30,12 +30,16 @@ class ConnectorGitHub(Connector):
         self.opsdroid = opsdroid
         self.github_username = None
         self.github_api_url = self.config.get("api_base_url", GITHUB_API_URL)
-        try:
-            self.github_token = config["token"]
-        except KeyError:
-            _LOGGER.error(_("Missing auth token! You must set 'token' in your config."))
+        if not self.multitenant:
+            try:
+                self.github_token = config["token"]
+            except KeyError:
+                _LOGGER.error(_("Missing auth token! You must set 'token' in your config."))
 
-        self.secret = self.config.get("secret")
+            self.secret = self.config.get("secret")
+            self.secret_check()
+
+    def secret_check(self):
         if not self.secret:
             _LOGGER.warning(
                 _(
@@ -44,6 +48,7 @@ class ConnectorGitHub(Connector):
             )
 
     async def login_and_set_username(self):
+        """Login to Github using the configuration specified github token to get the username."""
         headers = {"Authorization": f"token {self.github_token}"}
         async with aiohttp.ClientSession(trust_env=True, headers=headers) as session:
             url = f"{self.github_api_url}/user"
@@ -108,11 +113,20 @@ class ConnectorGitHub(Connector):
         return True
 
     async def handle_request_multitenancy(self, tenant_id):
-        db = next(db for db in self.opsdroid.memory.databases if db.name == "mongo")
-        github_db = copy.copy(db)
+        """Set the token, secret, and username for multitenant requests.
+        
+        In the case of multitenancy, we need to look up the token and secret
+        from a mongodb using the specified collection. Also we should set the
+        username usable for a response.
+        """
+        github_db = self.opsdroid.memory.first_of_type("mongo")
         github_db.collection = self.collection
+        _LOGGER.info(
+            _("Getting tenant %s from MongoDB: collection %s"), tenant_id, self.collection
+        )
         tenant = await github_db.get(tenant_id)
         self.secret = tenant["secret"]
+        self.secret_check()
         self.github_token = tenant["token"]
         await self.login_and_set_username()
 
@@ -230,6 +244,7 @@ class ConnectorGitHub(Connector):
     async def github_message_handler(self, request):
         """Handle event from GitHub."""
         if self.multitenant:
+            _LOGGER.info("Multitenant request detected.")
             tenant_id = request.match_info["_id"]
             await self.handle_request_multitenancy(tenant_id)
         req = await request.post()

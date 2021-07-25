@@ -112,3 +112,14 @@ class Memory:
         if self.databases:
             for database in self.databases:
                 await database.delete(key)
+
+    def first_of_type(self, type):
+        """Find the first database object for the given type.
+        
+        Returns a database object if one is found.
+        
+        Args:
+            type (str): Type of database object to return
+        """
+        if self.databases:
+            return next(db for db in self.databases if db.name == type)
