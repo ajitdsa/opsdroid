@@ -34,7 +34,9 @@ class ConnectorGitHub(Connector):
             try:
                 self.github_token = config["token"]
             except KeyError:
-                _LOGGER.error(_("Missing auth token! You must set 'token' in your config."))
+                _LOGGER.error(
+                    _("Missing auth token! You must set 'token' in your config.")
+                )
 
             self.secret = self.config.get("secret")
             self.secret_check()
@@ -114,7 +116,7 @@ class ConnectorGitHub(Connector):
 
     async def handle_request_multitenancy(self, tenant_id):
         """Set the token, secret, and username for multitenant requests.
-        
+
         In the case of multitenancy, we need to look up the token and secret
         from a mongodb using the specified collection. Also we should set the
         username usable for a response.
@@ -122,7 +124,9 @@ class ConnectorGitHub(Connector):
         github_db = self.opsdroid.memory.first_of_type("mongo")
         github_db.collection = self.collection
         _LOGGER.info(
-            _("Getting tenant %s from MongoDB: collection %s"), tenant_id, self.collection
+            _("Getting tenant %s from MongoDB: collection %s"),
+            tenant_id,
+            self.collection,
         )
         tenant = await github_db.get(tenant_id)
         self.secret = tenant["secret"]

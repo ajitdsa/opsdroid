@@ -115,9 +115,9 @@ class Memory:
 
     def first_of_type(self, type):
         """Find the first database object for the given type.
-        
+
         Returns a database object if one is found.
-        
+
         Args:
             type (str): Type of database object to return
         """
