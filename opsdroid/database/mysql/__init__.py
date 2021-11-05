@@ -140,7 +140,7 @@ class DatabaseMysql(Database):
     async def disconnect(self):
         """Disconnect from the database."""
         if self.connection:
-            await self.connection.close()
+            self.connection.close()
             _LOGGER.info("Disconnected from MySQL.")
 
     @create_table_if_not_exists
